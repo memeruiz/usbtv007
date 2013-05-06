@@ -152,6 +152,56 @@ def even(num):
     else:
         return(False)
 
+def clamp(num):
+    if num>255:
+        return(255)
+    elif num<0:
+        return(0)
+    else:
+        return(num)
+
+def yuv2rgb(yuv):
+    c=ord(yuv[0])
+    d=ord(yuv[1])
+    e=ord(yuv[2])
+    r=chr(clamp((298*c+409*e+128)>>8))
+    g=chr(clamp((298*c+100*d-208*e+128)>>8))
+    b=chr(clamp((299*c+516*d+128)>>8))
+    return((r,g,b))
+
+from numpy import array , dot
+def ypbpr2rgb(data):
+    #print data
+    return(dot(array([[1., 0., 1.402],[1., -0.344, -0.714], [1., 1.772, 0.]]), data))
+
+def ypbpr2rgb2(data):
+    res=ypbpr2rgb(array([ord(data[0]), struct.unpack('b', data[1])[0], struct.unpack('b', data[2])[0]]))
+    #print res
+    return(chr(clamp(int(res[0]))), chr(clamp(int(res[1]))), chr(clamp(int(res[2]))))
+
+def ycbcr2rgb(data):
+    return(dot(array([[1., 0., 0.701],
+           [1., -0.886*0.114/0.587, -0.701*0.299/0.587],
+           [1., 0.886, 0.]]), data))
+
+def ycbcr2rgb(data):
+    return(dot(array([[1., 0., 1.4],
+           [1., -0.343, -0.711],
+           [1., 1.765, 0.]]), data))
+
+def ycbcr2rgb(data):
+    return(dot(array([[1., 0., 1.402],
+           [1., -0.34414, -0.71414],
+           [1., 1.772, 0.]]), data))
+
+def ycbcr2rgb2(data):
+    res=ycbcr2rgb(array([(ord(data[0])-16)*255./(235.-16.), (ord(data[1])-0x80)*255./(240.-16.)/2., (ord(data[2])-0x80)*255./(240.-16.)/2.]))
+    #print res
+    return(chr(clamp(int(res[0]))), chr(clamp(int(res[1]))), chr(clamp(int(res[2]))))
+
+def mirror(data):
+    return(data)
+
 def unpack_images(raw_packets):
 
     # Getting smaller internal packets
@@ -197,7 +247,7 @@ def unpack_images(raw_packets):
             counter=0
     print "len images", len(images), len(images[0])
 
-    raw_input()
+    #raw_input()
     # Joining packets to generate correct rows
     images2=[]
     image2=[]
@@ -207,7 +257,7 @@ def unpack_images(raw_packets):
         for row in img:
             full_image+=row[3]
         print " 2 *len(full_image)/3" , 2*len(full_image)/3
-        raw_input()
+        #raw_input()
         new_n_cols=(3*len(img[0][3])/2)
         new_n_rows=len(full_image)/new_n_cols
         print "New cols row size", new_n_cols, new_n_cols
@@ -217,11 +267,44 @@ def unpack_images(raw_packets):
             print "new row" ,  len(new_row_big)
         images2.append(image2)
 
-    raw_input()
+    #raw_input()
     # printing images
     for img in images2:
-        for row in img:
-            print row[:3], [hex(ord(i)) for i in row[3]], len(row[3])
+        for n, row in enumerate(img):
+            print n, row[:3], [hex(ord(i)) for i in row[3]], len(row[3])
+
+    for row in images2[0][len(img[0])/5:(len(img[0])/5)+10]:
+        print "Row", row[:3], [hex(ord(i)) for i in row[3]], len(row[3])
+
+
+    #YUV!
+    images3=[]
+    image3=[]
+    for img in images2:
+        image3=[]
+        for n_row, row in enumerate(img):
+            new_row=''
+            for i in xrange(len(row[3])/4):
+                y1=row[3][i*4]
+                u=row[3][i*4+1]
+                y2=row[3][i*4+2]
+                v=row[3][i*4+3]
+                yuv1=(y1,u,v)
+                yuv2=(y2,u,v)
+                rgb1=ycbcr2rgb2(yuv1)
+                rgb2=ycbcr2rgb2(yuv2)
+                #rgb1=mirror(yuv1)
+                #rgb2=mirror(yuv2)
+                new_row+=reduce(lambda x,y: x+y, rgb1)+reduce(lambda x,y: x+y, rgb2)
+                if (n_row==80/2 and i==80/2) or (n_row==150/2 and i==300/2) or (n_row==470/2 and i==150/2):
+                    #azul 11 20 71, verde 43 155 55, negro 9 9 9 
+                    print "N rows" , len(img), "len(row[3])/4", len(row[3])/4
+                    print "Old:" , [hex(ord(k)) for k in row[3][i*4:i*4+4]], [hex(ord(k)) for k in y1+u+y2+v]
+                    print "New row", [hex(ord(k)) for k in reduce(lambda x,y: x+y, rgb1)+reduce(lambda x,y: x+y, rgb2)]
+                    #raw_input()
+                #raw_input()
+            image3.append((0, 0, 0, new_row))
+        images3.append(image3)
 
     # Erasing even dots in images
     #raw_input()
@@ -231,16 +314,18 @@ def unpack_images(raw_packets):
         for row in image:
             new_row=''
             for n, col in enumerate(row[3]):
-                if even(n):
+                if not even(n):
                     new_row+=col
+                #else:
+                #    new_row+=col
             new_image.append((row[0], row[1], row[2], new_row))
         new_images.append(new_image)
-    return(new_images)
+    return(images3)
 
 
-    raw_input()
+    #raw_input()
     print small_packets
-    raw_input()
+    #raw_input()
     state="lost"
     n_zeros=0
     out_data=[]
@@ -322,7 +407,7 @@ def main():
     vis_images_final=create_pil_images(images)
 
     for i, size in vis_images_final:
-        im=Image.frombuffer("L", size, i)
+        im=Image.frombuffer("RGB", (size[0]/3, size[1]), i)
         im.show()
 
 
