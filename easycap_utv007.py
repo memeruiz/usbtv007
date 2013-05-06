@@ -254,33 +254,52 @@ def unpack_images(raw_packets):
     for img in images:
         image2=[]
         full_image=''
+        n_img=img[0][0]
+        n_toggle=img[0][2]
+        #print "Image", n_img, n_toggle
+        #raw_input()
         for row in img:
             full_image+=row[3]
-        print " 2 *len(full_image)/3" , 2*len(full_image)/3
+        #print " 2 *len(full_image)/3" , 2*len(full_image)/3
         #raw_input()
         new_n_cols=(3*len(img[0][3])/2)
         new_n_rows=len(full_image)/new_n_cols
         print "New cols row size", new_n_cols, new_n_cols
         for i in xrange(new_n_rows):
             new_row_big=full_image[i*new_n_cols:(i+1)*new_n_cols]
-            image2.append((0, 0, 0, new_row_big))
-            print "new row" ,  len(new_row_big)
+            image2.append((n_img, 0, n_toggle, new_row_big))
+            #print "new row" ,  len(new_row_big)
         images2.append(image2)
+
+
+    print "interlacing"
+    images2a=[]
+    image2a=[]
+    for n_img, img in enumerate(images2):
+        image2a=[]
+        if len(images2)>=n_img+2 and img[0][2]==0 and images2[n_img+1][0][2]==1:
+            print "First image, followed by a second one"
+            for row0, row1 in zip(img, images2[n_img+1]):
+                image2a.append((img[0][0], 0, 0, row0[3]))
+                image2a.append((img[0][0], 0, 0, row1[3]))
+            images2a.append(image2a)
 
     #raw_input()
     # printing images
-    for img in images2:
+    for img in images2a:
         for n, row in enumerate(img):
-            print n, row[:3], [hex(ord(i)) for i in row[3]], len(row[3])
+            #print n, row[:3], [hex(ord(i)) for i in row[3]], len(row[3])
+            pass
 
-    for row in images2[0][len(img[0])/5:(len(img[0])/5)+10]:
-        print "Row", row[:3], [hex(ord(i)) for i in row[3]], len(row[3])
+    for row in images2a[0][len(img[0])/5:(len(img[0])/5)+10]:
+        #print "Row", row[:3], [hex(ord(i)) for i in row[3]], len(row[3])
+        pass
 
 
     #YUV!
     images3=[]
     image3=[]
-    for img in images2:
+    for img in images2a:
         image3=[]
         for n_row, row in enumerate(img):
             new_row=''
@@ -292,15 +311,15 @@ def unpack_images(raw_packets):
                 yuv1=(y1,u,v)
                 yuv2=(y2,u,v)
                 rgb1=ycbcr2rgb2(yuv1)
-                rgb2=ycbcr2rgb2(yuv2)
-                #rgb1=mirror(yuv1)
+                rgb2=ycbcr2rgb2(yuv2)                #rgb1=mirror(yuv1)
                 #rgb2=mirror(yuv2)
                 new_row+=reduce(lambda x,y: x+y, rgb1)+reduce(lambda x,y: x+y, rgb2)
                 if (n_row==80/2 and i==80/2) or (n_row==150/2 and i==300/2) or (n_row==470/2 and i==150/2):
+                    pass
                     #azul 11 20 71, verde 43 155 55, negro 9 9 9 
-                    print "N rows" , len(img), "len(row[3])/4", len(row[3])/4
-                    print "Old:" , [hex(ord(k)) for k in row[3][i*4:i*4+4]], [hex(ord(k)) for k in y1+u+y2+v]
-                    print "New row", [hex(ord(k)) for k in reduce(lambda x,y: x+y, rgb1)+reduce(lambda x,y: x+y, rgb2)]
+                    #print "N rows" , len(img), "len(row[3])/4", len(row[3])/4
+                    #print "Old:" , [hex(ord(k)) for k in row[3][i*4:i*4+4]], [hex(ord(k)) for k in y1+u+y2+v]
+                    #print "New row", [hex(ord(k)) for k in reduce(lambda x,y: x+y, rgb1)+reduce(lambda x,y: x+y, rgb2)]
                     #raw_input()
                 #raw_input()
             image3.append((0, 0, 0, new_row))
@@ -394,10 +413,10 @@ import struct
 
 def main():
     utv=Utv007()
-    for i in xrange(40):
+    for i in xrange(80):
         #raw_input()
         utv.do_iso()
-    for i in xrange(40):
+    for i in xrange(80):
         utv.handle_ev()
     print " len image", len(utv.image)
     #image=struct.unpack('H'*(len(utv.image)/2), utv.image)
@@ -411,123 +430,6 @@ def main():
         im.show()
 
 
-
-    #for i in utv.image:
-    #    print hex(ord(i)),
-    #    pass
-    #print "Image" ,image
-    n_zeros=0
-    n_lines=0
-    cols=0
-    new_image=[]
-    images=[]
-    line=''
-    for n,i in enumerate(utv.image):
-        if i==chr(0x00):
-            n_zeros+=1
-            max_zeros=0
-            max_cols=cols
-        else:
-            max_zeros=n_zeros
-            n_zeros=0
-            cols+=1
-            line+=i
-        if max_zeros>=50:
-            n_lines+=1
-            #print " Cols" , max_cols, " max zeros" , max_zeros, "First number" , hex(ord(i)), hex(ord(utv.image[n+1])), hex(ord(utv.image[n+2])), hex(ord(utv.image[n+3])), struct.unpack('H', utv.image[n+3]+utv.image[n+2])
-            cols=0
-            #print " New line", n_lines
-            #max_zeros=0
-        if max_zeros>=1084:
-            #print " Lines" , n_lines
-            #n_lines=0
-            pass
-        if max_zeros>=2100:
-            print " New image" , max_zeros
-            print " Lines" , n_lines
-            n_lines=0
-            #max_zeros=0
-        if max_zeros>=50:
-            #print "new line added", [hex(ord(i)) for i in line]
-            new_image.append(line)
-            line=''
-        if max_zeros>=2100:
-            images.append(list(new_image))
-            new_image=[]
-            print "new image added", len(images)
-    print " Captured", len(images), " Images"
-
-    vis_images=[]
-    vis_image=''
-    for i, img in enumerate(images):
-        #print "Image" , i, "Lines", len(img), "First line cols" , len(img[0])
-        if len(img)==360:
-            n_lines=0
-            for line in img:
-                if len(line)>=960:
-                    n_lines+=1
-                    print " Line" ,
-                    #print [hex(ord(line[k])) for k in xrange(len(line))],
-                    print [hex(ord(line[k])) for k in xrange(4)],
-                    print [hex(ord(line[-4:][k])) for k in xrange(4)],
-                    print "len" , len(line)
-                    vis_image+=line[:960]
-            vis_images.append((vis_image,(960, n_lines)))
-            vis_image=''
-
-    print "Useful images" , len(vis_images)
-    for i in vis_images:
-        print "length image", len(i[0]), i[1][0]*i[1][1], 360*960
-    raw_input()
-
-
-    #remove vert line
-    vis_images2=[]
-    for i, size in vis_images:
-        new_image=''
-        for row in xrange(size[1]):
-            line=i[row*size[0]:(row+1)*size[0]]
-            new_line=''
-            for col, j in enumerate(line):
-                if not even(col):
-                    new_line+=j
-            #print " Line" , [hex(ord(k)) for k in new_line]
-            new_image+=new_line
-        vis_images2.append((new_image, (size[0]/2, size[1])))
-
-
-    # # resync
-    # vis_image3=[]
-    # for img, size in vis_images:
-    #     new_image=''
-    #     for i in img:
-    #         if ord(i)==0x01:
-    #             print " Sync"
-
-
-    #flip
-    vis_images_final=[]
-    for i, size in vis_images2:
-        new_image=''
-        for row in xrange(size[1]):
-            line=i[row*size[0]:(row+1)*size[0]]
-            new_image=line+new_image
-            #print " Line" , [hex(ord(k)) for k in line]
-        vis_images_final.append((new_image, size))
-
-    #image=''
-    #for i in utv.image:
-    #    if i!=chr(0x00):
-    #        image+=i
-    #image2=''
-    #counter=0
-    #for i in xrange(640*525):
-    #    image2+=chr((ord(image[i*4]) & 0xff))+chr((ord(image[i*4+1]) & 0xff))+chr((ord(image[i*4+2]) & 0xff))+chr((ord(image[i*4+3]) & 0xff))
-    #print "len image2" ,len(image2)
-    for i, size in vis_images_final:
-        im=Image.frombuffer("L", size, i)
-        #im.show()
-    #raw_input()
 
 if __name__=="__main__":
     main()
