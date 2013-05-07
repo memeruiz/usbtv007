@@ -280,8 +280,8 @@ def unpack_images(raw_packets):
         if len(images2)>=n_img+2 and img[0][2]==0 and images2[n_img+1][0][2]==1:
             print "First image, followed by a second one"
             for row0, row1 in zip(img, images2[n_img+1]):
-                image2a.append((img[0][0], 0, 0, row0[3]))
                 image2a.append((img[0][0], 0, 0, row1[3]))
+                image2a.append((img[0][0], 0, 0, row0[3]))
             images2a.append(image2a)
 
     #raw_input()
