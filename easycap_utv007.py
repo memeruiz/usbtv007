@@ -5,19 +5,31 @@ interface=0
 
 import usb1 as u
 from protocol import p_init, p5
+from protocol import *
 from time import sleep
 
+def variable_for_value(value):
+    
+    for n,v in globals().items():
+        if v == value:
+            return n
+    return None
+
 def run_protocol(prot, devh):
-    for req in prot:
+    print "TESTST"
+    for req_num, req in enumerate(prot):
         print "line", req[0], hex(req[1]), hex(req[2]), hex(req[3]), req[4], req[5],
         if len(req)>6:
             if type(req[6])==list:
                 for i,j in req[6]:
-                    print hex(i), j
+                    print hex(i), variable_for_value(j),
+            elif type(req[6])==tuple:
+                print [hex(i) for i in req[6]],
             else:
-                print hex(req[6])
-        else:
-            print
+                print hex(req[6]),
+        #else:
+        #    print
+        print "req num", req_num
         if req[0][0]=='c':
             if req[0][2:]=='vd':
                 print "Control request"
@@ -26,18 +38,31 @@ def run_protocol(prot, devh):
                     reply=devh.controlRead(
                         u.libusb1.LIBUSB_TYPE_VENDOR|u.libusb1.LIBUSB_RECIPIENT_DEVICE,
                         req[1], req[2], req[3], req[5])
-                    print "Reply:", hex(ord(reply))
+                    if len(reply)==1:
+                        print "Reply:", hex(ord(reply))
+                    else:
+                        print "Reply:", [hex(ord(i)) for i in reply]
+                        print "Reply char:", reply
                     if type(req[6])==list:
                         print " Multiply options"
                         found_prot=False
                         for resp, next_prot in req[6]:
                             if resp==ord(reply):
-                                print "Found response in multiple options, running recursively" 
+                                print "Found response in multiple options, running recursively"
+                                print "Jumping to:" , variable_for_value(next_prot)
                                 run_protocol(next_prot, devh)
                                 found_prot=True
                                 break
                         if not found_prot:
                             print "Unknown response!! Exiting!"
+                            exit()
+                    elif type(req[6])==tuple:
+                        print "Long answer"
+                        #raw_input()
+                        if list(req[6])==[ord(i) for i in reply]:
+                            print " All fine"
+                        else:
+                            print " Response incorrect!!! Exiting"
                             exit()
                     else:
                         if ord(reply)==req[6]:
@@ -79,12 +104,18 @@ class Utv007(object):
             print "No easycap utv007 devices found"
             exit()
 
-        if self.devh.kernelDriverActive(self.interface):
-            print "Kernel driver already using device. Stopping"
-            exit()
+        while self.devh.kernelDriverActive(self.interface):
+            self.devh.detachKernelDriver(self.interface)
+            sleep(0.5)
+        #if kernel:
+        #    print "Kernel driver already using device. Stopping. Kernel:", kernel
+        #    exit()
 
         print "Claiming interface"
         self.devh.claimInterface(self.interface)
+        print "Preinit"
+        run_protocol(p_preinit, self.devh)
+        print "init"
         run_protocol(p_init, self.devh)
         #sleep(1.)
         print
