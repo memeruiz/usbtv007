@@ -1,4 +1,21 @@
 #!/usr/bin/env python
+# Copyright (c) 2013 Federico Ruiz Ugalde
+# Author: Federico Ruiz-Ugalde <memeruiz at gmail dot com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+# This is a stand alone application. For now it only captures and displays an image after connecting to the device, then it stops.
 
 easycap_dev_id='0x1b71:0x3002'
 interface=0
@@ -439,15 +456,62 @@ def create_pil_images(images):
         #raw_input()
     return(out_images)
 
+def change_res(images):
+    width=640
+    new_images=[]
+    for img, size in images:
+        new_img=''
+        for i in xrange(size[1]):
+            new_img=img[i*size[0]: i*size[0]+width*3]+new_img
+        new_images.append((new_img, (width*3, size[1])))
+    return(new_images)
+
+from fcntl import ioctl
+import v4l2 as v
+import os
+from time import time, sleep
+
+def send_loopback(images):
+    d=os.open("/dev/video1", os.O_RDWR)
+    cap=v.v4l2_capability()
+    ioctl(d, v.VIDIOC_QUERYCAP, cap)
+    vid_format=v.v4l2_format()
+    #ioctl(d, v.VIDIOC_G_FMT, vid_format)
+    vid_format.type=v.V4L2_BUF_TYPE_VIDEO_OUTPUT
+    vid_format.fmt.pix.width=640
+    #vid_format.fmt.pix.sizeimage=1036800
+    vid_format.fmt.pix.height=480
+    vid_format.fmt.pix.pixelformat=v.V4L2_PIX_FMT_RGB24
+    vid_format.fmt.pix.field=v.V4L2_FIELD_NONE
+    vid_format.fmt.pix.colorspace=v.V4L2_COLORSPACE_SRGB
+    ioctl(d, v.VIDIOC_G_FMT, vid_format)
+    print "frame size", vid_format.fmt.pix.sizeimage, len(images[0][0]), images[0][1]
+    raw_input()
+    counter=0
+    old_t=time()
+    fps_period=1./29.97
+    while True:
+        counter+=1
+        #print "Image", counter
+        for img, size in images:
+            t=time()
+            delta_time=t-old_t
+            print "Delta", delta_time,
+            old_t=t
+            if delta_time<fps_period:
+                print "sleeping a bit"
+                sleep(fps_period-delta_time)
+            os.write(d, img)
+
 import Image
 import struct
 
 def main():
     utv=Utv007()
-    for i in xrange(80):
+    for i in xrange(480):
         #raw_input()
         utv.do_iso()
-    for i in xrange(80):
+    for i in xrange(480):
         utv.handle_ev()
     print " len image", len(utv.image)
     #image=struct.unpack('H'*(len(utv.image)/2), utv.image)
@@ -455,6 +519,8 @@ def main():
     #print utv.image
     images=unpack_images(utv.image)
     vis_images_final=create_pil_images(images)
+    v4l_images=change_res(vis_images_final)
+    send_loopback(v4l_images)
 
     for i, size in vis_images_final:
         im=Image.frombuffer("RGB", (size[0]/3, size[1]), i)
