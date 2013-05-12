@@ -93,11 +93,25 @@ def run_protocol(prot, devh):
                     elif type(req[6])==tuple:
                         print "Long answer"
                         #raw_input()
-                        if list(req[6])==[ord(i) for i in reply]:
-                            print " All fine"
-                        else:
-                            print " Response incorrect!!! Exiting"
-                            exit()
+                        if len(req)==7:
+                            if list(req[6])==[ord(i) for i in reply]:
+                                print " All fine"
+                            else:
+                                print " Response incorrect!!! Exiting"
+                                exit()
+                        elif len(req)==8:
+                            print "Some reply may be ignored"
+                            for reply, exp_reply, check in zip([ord(i) for i in reply], req[6], req[7]):
+                                print "Reply", reply, exp_reply, check
+                                if check:
+                                    if reply==exp_reply:
+                                        print "All fine"
+                                    else:
+                                        print "Problems with reply!", reply, exp_reply, check
+                                        exit()
+                                else:
+                                    print "Ignored reply"
+                            raw_input()
                     else:
                         if ord(reply)==req[6]:
                             print "All fine!"
