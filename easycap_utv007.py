@@ -24,6 +24,10 @@ import usb1 as u
 from protocol import p_init, p5
 from protocol import *
 from time import sleep
+from fcntl import ioctl
+import v4l2 as v
+import os
+from time import time, sleep
 
 def variable_for_value(value):
     
@@ -139,9 +143,20 @@ class Utv007(object):
         print "Second part"
         print
         run_protocol(p5, self.devh)
-        print "Setting Altsetting to 1" 
+        print "Setting Altsetting to 1"
         self.devh.setInterfaceAltSetting(self.interface,1)
         self.image=[]
+        #packet related:
+        self.s_packets=''
+        self.expected_toggle=True
+        self.expected_n_s_packet=0
+        self.expected_n_img=0
+        self.start_frame=True
+        self.n_packets=0
+        self.v4l_init()
+        #self.iso=self.devh.getTransfer(iso_packets=8)
+        #self.iso.setIsochronous(0x81, 0x6000, callback=self.callback2, timeout=1000)
+        print "Initialization completed"
         #print "Reading int"
     #a=devh.interruptRead(4,0, timeout=1000)
     #print "Interrupt result" , a
@@ -161,8 +176,19 @@ class Utv007(object):
         self.iso.submit()
         #self.iso.setCallback(callback1)
 
+    def do_iso2(self):
+        #print "Submitting another iso"
+        self.iso=self.devh.getTransfer(iso_packets=8)
+        self.iso.setIsochronous(0x81, 0x6000, callback=self.callback2, timeout=1000)
+        self.iso.submit()
+        #self.iso.setCallback(callback1)
+
+
     def handle_ev(self):
+        #print "Event a"
+        #sleep(10)
         self.cont.handleEvents()
+        #print "Event b"
 
     def get_useful_data(self, buffer_list, setup_list):
         data=''
@@ -171,6 +197,83 @@ class Utv007(object):
             print "Actual len" , actual_len
             data+=b[:actual_len]
         return(data)
+
+    def build_images(self, buffer_list, setup_list):
+        """ buffer_list is a list that contains around 8 packets inside, each of this packets contains 3 smaller packets inside
+        The first four bytes of this s_packets are special:
+        1) 0x88 always
+        2) frame counter
+        3) 8bit: toogle frame bit (for interlacing), 7-0bits packet counter
+        4) packet counter
+        With frame counter one can know if we are loosing frames
+        With the packet counter one can know if we have incomplete frames
+        With the toogle frame bit it is possible to generate the correct complete progressive image
+        This four bytes must be removed from the image data.
+        The last 60 bytes are black filled (for synchronization?) and must be removed
+        Each s_packet is 1024 long but once we remove this bytes the data payload is 1024-4-60=960 bytes long.
+        If packet starts with 0x00 instead of 0x88, it means it is empty and to be ignored
+
+        In this routine we find the start of first of the two interlaced images, and then we start processing
+"""
+
+        packets=[self.buffer_list[i][:int(self.setup_list[i]['actual_length'])] for i in xrange(len(self.buffer_list))]
+        #print "n packets", len(packets)
+        for packet in packets:
+            #print [hex(ord(i)) for i in packet[:4]]
+            #print [hex(ord(i)) for i in packet[len(packet)/3:len(packet)/3+4]]
+            #print [hex(ord(i)) for i in packet[2*len(packet)/3:2*len(packet)/3+4]]
+            #if [hex(ord(i)) for i in packet[:4]]==['0x0', '0x0', '0x0', '0x0'] or [hex(ord(i)) for i in packet[len(packet)/3:len(packet)/3+4]]==['0x0', '0x0', '0x0', '0x0'] or [hex(ord(i)) for i in packet[2*len(packet)/3:2*len(packet)/3+4]]==['0x0', '0x0', '0x0', '0x0']:
+                #print "special packet"
+            #    pass
+            if len(packet)!=0:
+                for s_packet in [packet[:len(packet)/3], packet[len(packet)/3:2*len(packet)/3], packet[2*len(packet)/3:len(packet)]]:
+                    if ord(s_packet[0])==0x88:
+                        #print "Correct packet, adding"
+                        n_img=ord(s_packet[1])
+                        n_s_packet=((ord(s_packet[2]) & 0x0f)<< 8) | (ord(s_packet[3]))
+                        n_toggle=(((ord(s_packet[2]) & 0xf0) >> 7) == 0)
+                        #print "packet info", n_img, n_toggle, n_s_packet, self.n_packets
+                        self.n_packets+=1
+                        if self.expected_toggle==n_toggle and self.expected_n_s_packet==n_s_packet:
+                            #print "Expected"
+                            #print "packet info", "Image number:", n_img, "Toggle:",  n_toggle, "Pack Number:", n_s_packet, "Total packs:", self.n_packets
+                            if self.start_frame:
+                                self.start_frame=False
+                                self.expected_n_img=n_img
+                            self.s_packets+=s_packet[4:1024-60]
+                            self.expected_n_img+=1
+                            self.expected_n_s_packet+=1
+                            if self.expected_n_s_packet==360:
+                                self.expected_n_s_packet=0
+                                self.expected_toggle=not self.expected_toggle
+                                #print "n packets", self.n_packets, len(self.s_packets)
+                                if self.n_packets>360:
+                                    print "N Packets", self.n_packets, " losing:" , (self.n_packets/360.)-1., " images"
+                                self.n_packets=0
+                                if self.expected_toggle==False:
+                                    if len(self.s_packets)==720*2*480:
+                                        #print "Image complete!"
+                                        self.send_v4l()
+                                        #raw_input()
+                                    self.s_packets=''
+                        else:
+                            #print "Not expected"
+                            self.expected_n_s_packet=0
+                            self.s_packets=''
+            #print [hex(ord(i)) for i in packet]
+
+    def callback2(self, transfer):
+        #print "Callback"
+        self.buffer_list=transfer.getISOBufferList()
+        self.setup_list=transfer.getISOSetupList()
+        self.status=transfer.getStatus()
+        #print "Status" , self.status
+        self.build_images(self.buffer_list, self.setup_list)
+        #del transfer
+        #transfer.close()
+        transfer.submit()
+        #self.do_iso2()
+        pass
 
     def callback1(self, transfer):
         self.buffer=transfer.getBuffer()
@@ -191,6 +294,34 @@ class Utv007(object):
             print self.setup_list[i]['actual_length']
         #raw_input()
         self.image+=[self.buffer_list[i][:int(self.setup_list[i]['actual_length'])] for i in xrange(len(self.buffer_list))]
+
+    def v4l_init(self):
+        self.d=os.open("/dev/video1", os.O_RDWR)
+        cap=v.v4l2_capability()
+        ioctl(self.d, v.VIDIOC_QUERYCAP, cap)
+        vid_format=v.v4l2_format()
+        #ioctl(d, v.VIDIOC_G_FMT, vid_format)
+        vid_format.type=v.V4L2_BUF_TYPE_VIDEO_OUTPUT
+        vid_format.fmt.pix.width=720
+        vid_format.fmt.pix.sizeimage=1036800
+        vid_format.fmt.pix.height=480
+        vid_format.fmt.pix.pixelformat=v.V4L2_PIX_FMT_YUYV
+        vid_format.fmt.pix.field=v.V4L2_FIELD_NONE
+        vid_format.fmt.pix.colorspace=v.V4L2_COLORSPACE_SRGB
+        ioctl(self.d, v.VIDIOC_S_FMT, vid_format)
+        print "frame size", vid_format.fmt.pix.sizeimage, len(self.s_packets)
+        self.old_t=time()
+
+    def send_v4l(self):
+        t=time()
+        delta_time=t-self.old_t
+        #print "Delta", delta_time,
+        self.old_t=t
+        out=''
+        for i in xrange(480/2):
+            out+=self.s_packets[i*1440:(i+1)*1440]
+            out+=self.s_packets[(i+480/2)*1440:(i+480/2+1)*1440]
+        os.write(self.d, out)
 
 
 def even(num):
@@ -281,9 +412,10 @@ def unpack_images(raw_packets):
     images=[]
     counter=0
     image=[]
+    counter2=0
     for small_packet in small_packets:
         if small_packet[1]==counter:
-            print "Adding packet to image", small_packet[0]
+            print "Adding packet to image", small_packet[0], counter, counter2
             image.append(small_packet)
             counter+=1
             if counter==360:
@@ -293,6 +425,7 @@ def unpack_images(raw_packets):
         else:
             print "Counter incorrect, resetting"
             counter=0
+        counter2+=1
     print "len images", len(images), len(images[0])
 
     #raw_input()
@@ -389,59 +522,6 @@ def unpack_images(raw_packets):
         new_images.append(new_image)
     return(images3)
 
-
-    #raw_input()
-    print small_packets
-    #raw_input()
-    state="lost"
-    n_zeros=0
-    out_data=[]
-    for i in raw_data:
-        if state=="lost":
-            print "looking for zeros"
-            if ord(i)==0x00:
-                print "first zero found"
-                state="zeros"
-                n_zeros+=1
-        elif state=="zeros":
-            if ord(i)==0x00:
-                n_zeros+=1
-                if n_zeros==60:
-                    print "All zeros found"
-                    state="88"
-                    n_zeros=0
-                elif n_zeros>60:
-                    print " Error more zeros than 60"
-                    exit()
-        elif state=="88":
-            if ord(i)==0x88:
-                print "88 found"
-                state=="record_packet"
-                out=''
-            else:
-                print "Error 88 expected"
-                exit()
-        elif state=="record_packet":
-            print "recording data"
-            if ord(i)==0x00:
-                n_zeros+=1
-                if n_zeros==60:
-                    print "All zeros found"
-            elif ord(i)==0x88:
-                if n_zeros>=60:
-                    print "Found 60 or more zeros and 88, new line found!"
-                    n_zeros=0
-                    new_line=True
-            else:
-                n_zeros=0
-            if new_line:
-                out_data.append(out)
-                out=i
-                new_line=False
-            else:
-                out+=i
-
-
 def create_pil_images(images):
     out_images=[]
     for img in images:
@@ -484,7 +564,7 @@ def send_loopback(images):
     vid_format.fmt.pix.pixelformat=v.V4L2_PIX_FMT_RGB24
     vid_format.fmt.pix.field=v.V4L2_FIELD_NONE
     vid_format.fmt.pix.colorspace=v.V4L2_COLORSPACE_SRGB
-    ioctl(d, v.VIDIOC_G_FMT, vid_format)
+    ioctl(d, v.VIDIOC_S_FMT, vid_format)
     print "frame size", vid_format.fmt.pix.sizeimage, len(images[0][0]), images[0][1]
     raw_input()
     counter=0
@@ -508,10 +588,11 @@ import struct
 
 def main():
     utv=Utv007()
-    for i in xrange(480):
+    for i in xrange(80):
         #raw_input()
         utv.do_iso()
-    for i in xrange(480):
+    for i in xrange(80):
+        print "Event", i
         utv.handle_ev()
     print " len image", len(utv.image)
     #image=struct.unpack('H'*(len(utv.image)/2), utv.image)
