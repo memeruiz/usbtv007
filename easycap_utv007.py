@@ -29,9 +29,21 @@ import v4l2 as v
 import os
 from time import time, sleep
 import weakref
+import numpy as n
+
+class Delta_t(object):
+    def __init__(self):
+        self.old_t=time()
+
+    def update_t(self):
+        self.old_t=time()
+
+    def diff_t(self):
+        t=time()
+        print "Diff t:", t-self.old_t
+        self.old_t=t
 
 def variable_for_value(value):
-    
     for n,v in globals().items():
         if v == value:
             return n
@@ -149,6 +161,7 @@ class Utv007(object):
         self.image=[]
         #packet related:
         self.s_packets=''
+        #self.s_packets=n.chararray(1, itemsize=960)
         self.expected_toggle=True
         self.expected_n_s_packet=0
         self.expected_n_img=0
@@ -157,6 +170,8 @@ class Utv007(object):
         self.v4l_init()
         self.stop=False
         self.iso=[]
+        self.dt=Delta_t()
+        #self.test=' '*960
         #self.iso=self.devh.getTransfer(iso_packets=8)
         #self.iso.setIsochronous(0x81, 0x6000, callback=self.callback2, timeout=1000)
         print "Initialization completed"
@@ -230,7 +245,6 @@ class Utv007(object):
 
         In this routine we find the start of first of the two interlaced images, and then we start processing
 """
-
         packets=[self.buffer_list[i][:int(self.setup_list[i]['actual_length'])] for i in xrange(len(self.buffer_list))]
         #print "n packets", len(packets)
         for packet in packets:
@@ -241,6 +255,7 @@ class Utv007(object):
                 #print "special packet"
             #    pass
             if len(packet)!=0:
+                #self.dt.update_t()
                 for s_packet in [packet[:len(packet)/3], packet[len(packet)/3:2*len(packet)/3], packet[2*len(packet)/3:len(packet)]]:
                     if ord(s_packet[0])==0x88:
                         #print "Correct packet, adding"
@@ -255,7 +270,11 @@ class Utv007(object):
                             if self.start_frame:
                                 self.start_frame=False
                                 self.expected_n_img=n_img
+                            #self.dt.update_t()
                             self.s_packets+=s_packet[4:1024-60]
+                            #self.s_packets.join(s_packet[4:1024-60])
+                            #self.dt.diff_t()
+                            #self.s_packets+=self.test
                             self.expected_n_img+=1
                             self.expected_n_s_packet+=1
                             if self.expected_n_s_packet==360:
@@ -275,6 +294,7 @@ class Utv007(object):
                             #print "Not expected"
                             self.expected_n_s_packet=0
                             self.s_packets=''
+                #self.dt.diff_t()
             #print [hex(ord(i)) for i in packet]
 
     def callback2(self, transfer):
