@@ -20,21 +20,35 @@ usb_interface=0
 from easycap_utv007 import Utv007
 
 from protocol import *
-from time import time
+from time import time, sleep
+import signal
+import sys
+import gc
+
+quit_now=False
+def signal_handler(signal, frame):
+    print 'You pressed Ctrl+C!'
+    global quit_now
+    quit_now=True
 
 def main():
-    utv=Utv007()
-    old_t=time()
-    for i in xrange(20):
-        utv.do_iso2()
+    with Utv007() as utv:
+    #utv=Utv007()
+        signal.signal(signal.SIGINT, signal_handler)
+        old_t=time()
+        for i in xrange(20):
+            utv.do_iso2()
         #pass
-    while True:
-        t=time()
-        delta_t=t-old_t
-        old_t=t
+        while not quit_now:
+    #for i in xrange(100):
+            t=time()
+            delta_t=t-old_t
+            old_t=t
         #print "Delta t" , delta_t
         #utv.do_iso2()
-        utv.handle_ev()
+            utv.handle_ev()
+        print "closing utv"
+        utv.stop=True
 
 
 if __name__=="__main__":

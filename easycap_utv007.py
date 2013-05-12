@@ -28,6 +28,7 @@ from fcntl import ioctl
 import v4l2 as v
 import os
 from time import time, sleep
+import weakref
 
 def variable_for_value(value):
     
@@ -154,6 +155,8 @@ class Utv007(object):
         self.start_frame=True
         self.n_packets=0
         self.v4l_init()
+        self.stop=False
+        self.iso=[]
         #self.iso=self.devh.getTransfer(iso_packets=8)
         #self.iso.setIsochronous(0x81, 0x6000, callback=self.callback2, timeout=1000)
         print "Initialization completed"
@@ -161,7 +164,14 @@ class Utv007(object):
     #a=devh.interruptRead(4,0, timeout=1000)
     #print "Interrupt result" , a
 
-    def __del__(self):
+    def __enter__(self):
+        print "Enter"
+        return(self)
+
+    def __exit__(self, type, value, traceback):
+        #for iso in self.iso:
+        #    print "STatus", iso.getStatus()
+        #del iso
         print "Realeasing interface"
         self.devh.releaseInterface(0)
         print "Closing device handler"
@@ -169,6 +179,10 @@ class Utv007(object):
         #sleep(2)
         print "Exiting context"
         self.cont.exit()
+        pass
+
+    def __del__(self):
+        print "Deleting"
 
     def do_iso(self):
         self.iso=self.devh.getTransfer(iso_packets=8)
@@ -178,9 +192,10 @@ class Utv007(object):
 
     def do_iso2(self):
         #print "Submitting another iso"
-        self.iso=self.devh.getTransfer(iso_packets=8)
-        self.iso.setIsochronous(0x81, 0x6000, callback=self.callback2, timeout=1000)
-        self.iso.submit()
+        iso=self.devh.getTransfer(iso_packets=8)
+        iso.setIsochronous(0x81, 0x6000, callback=self.callback2, timeout=1000)
+        iso.submit()
+        self.iso.append(iso)
         #self.iso.setCallback(callback1)
 
 
@@ -271,9 +286,11 @@ class Utv007(object):
         self.build_images(self.buffer_list, self.setup_list)
         #del transfer
         #transfer.close()
-        transfer.submit()
+        if not self.stop:
+            transfer.submit()
+        else:
+            print "Sending no more submits"
         #self.do_iso2()
-        pass
 
     def callback1(self, transfer):
         self.buffer=transfer.getBuffer()
