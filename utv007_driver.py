@@ -24,6 +24,7 @@ from time import time, sleep
 import signal
 import sys
 import gc
+from optparse import OptionParser
 
 quit_now=False
 def signal_handler(signal, frame):
@@ -32,7 +33,13 @@ def signal_handler(signal, frame):
     quit_now=True
 
 def main():
-    with Utv007() as utv:
+    parser = OptionParser()
+    parser.add_option("-d", "--device", dest="device",
+                  help="v4l loopback device filename", default="/dev/video0", metavar="FILE")
+
+    (options, args) = parser.parse_args()
+
+    with Utv007(device=options.device) as utv:
     #utv=Utv007()
         signal.signal(signal.SIGINT, signal_handler)
         old_t=time()

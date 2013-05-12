@@ -111,7 +111,7 @@ def run_protocol(prot, devh):
                                         exit()
                                 else:
                                     print "Ignored reply"
-                            raw_input()
+                            #raw_input()
                     else:
                         if ord(reply)==req[6]:
                             print "All fine!"
@@ -135,7 +135,8 @@ def run_protocol(prot, devh):
 
 class Utv007(object):
     interface=0
-    def __init__(self):
+    def __init__(self, device="/dev/video1"):
+        self.v4l_device=device
         dev=None
         self.cont=u.USBContext()
         for i in self.cont.getDeviceList():
@@ -347,7 +348,7 @@ class Utv007(object):
         self.image+=[self.buffer_list[i][:int(self.setup_list[i]['actual_length'])] for i in xrange(len(self.buffer_list))]
 
     def v4l_init(self):
-        self.d=os.open("/dev/video1", os.O_RDWR)
+        self.d=os.open(self.v4l_device, os.O_RDWR)
         cap=v.v4l2_capability()
         ioctl(self.d, v.VIDIOC_QUERYCAP, cap)
         vid_format=v.v4l2_format()
