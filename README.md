@@ -21,9 +21,11 @@ Use for example mplayer to look at the output:
 
 mplayer tv:// -tv device=/dev/video0
 
+(remember to replace "/dev/video0" with your v4l2loopback device)
+
 This driver is extremely experimental, code is ugly and full of debugging prints: this code was made to investigate the usb protocol of this device. Hopefully me or somebody else will use this to make a kernel driver.
 
-Python was used to make program. Performance is not the best, I guess it may be possible to improve it. In my computer (Core i5-2500T) it consumes 70% of one of the processor threads (very bad).
+Python was used to make this program. Performance is not the best (not necessary python's fault), I guess it may be possible to improve it. In my computer (Core i5-2500T) it consumes 70% of one of the processor threads (very bad).
 
 Features:
 
